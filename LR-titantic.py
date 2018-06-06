@@ -51,10 +51,11 @@ with tf.Session() as sess:
   coord = tf.train.Coordinator()
   threads = tf.train.start_queue_runners(sess=sess, coord=coord)
   loss_summaries = tf.summary.scalar('loss_summaries', total_loss)
+  
   # 实际的训练迭代次数
   training_step = 1000
   for step in range(training_step):
-      sess.run([train_op])
+      sess.run(train_op)
       if step % 100 == 0:
           # 保存图
           writer.add_summary(sess.run(loss_summaries), global_step=step)
