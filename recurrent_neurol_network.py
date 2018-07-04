@@ -9,6 +9,8 @@ import zipfile
 import collections
 import numpy as np
 import tensorflow as tf
+import matplotlib.pyplot as plt
+
 
 url = 'http://mattmahoney.net/dc/'
 
@@ -35,9 +37,9 @@ def extract_date(filename):
 
 def build_data_set(words):
   count = [['UNK', -1]]
-  count.extend(collections.Counter(words).most_common(vocabulary_size-1))
+  count.extend(collections.Counter(words).most_common(vocabulary_size - 1))
   dictionary = dict()
-  for word , _ in count:
+  for word, _ in count:
     dictionary[word] = len(dictionary)
   data = list()
   unk_count = 0
@@ -54,7 +56,8 @@ def build_data_set(words):
 
 def generate_batch(data, batch_size, num_skips, skip_window):
   """
-  batch_size: embedding size， 单词的稠密度向量的维度
+  batch_size: 
+  embedding size - 单词的稠密度向量的维度
   num_skips - 对每个目标单词提取的样本数
   skip_window - 单词最远可以联系的距离。
   """
@@ -80,6 +83,34 @@ def generate_batch(data, batch_size, num_skips, skip_window):
     buffer.append(data[data_index])
     data_index = (data_index + 1) % len(data)
   return batch, labels
+
+def plot_with_labels(low_dim_embs, labels, filename= 'tsne.png'):
+  plt.figure(figsize=(18, 18))
+  for i, label in enumerate(labels):
+    x, y = low_dim_embs[i, :]
+    plt.scatter(x,y)
+    plt.annotate(label,
+      xy=(x, y),
+      xytext=(5, 2),
+      textcoords='offset points',
+      ha='right', 
+      va='bottom'
+    )
+  plt.savefig(filename)
+
+def pca_func(dataMat, target_v=0):
+  mean_val = np.mean(dataMat, axis=0)
+  new_mat = dataMat-mean_val
+  cov_mat = np.cov(new_mat, rowvar=0)
+  eig_val, eig_vects = np.linalg.eig(cov_mat)
+  eig_val_indice = np.argsort(eig_val)
+  n_eig_val_indice = eig_val_indice 
+  if target_v != 0:
+    n_eig_val_indices = eig_val_indice[-1:-(target_v+1):-1]
+  n_eig_vects = eig_vects[:, n_eig_val_indice]
+  low_data_mat = np.dot(new_mat,mn_eig_vects)
+  return low_data_mat
+
 
 def main(argv=None):
   if argv is None:
@@ -114,56 +145,60 @@ def main(argv=None):
       embeddings = tf.Variable(
         tf.random_uniform([vocabulary_size, embedding_size], -1.0, 1.0)
       )
-      embed = tf.nn.embedding_lookup(embeddings, train_inputs)
+      embed_input = tf.nn.embedding_lookup(embeddings, train_inputs)
       nce_weights = tf.Variable(tf.truncated_normal([vocabulary_size, embedding_size], stddev=1.0/math.sqrt(embedding_size)))
       nce_biases = tf.Variable(tf.zeros([vocabulary_size]))
 
-    loss = tf.reduce_mean(
-      tf.nn.nce_loss(
-        weights=nce_weights,
-        biases=nce_biases,
-        labels=train_labels, 
-        inputs=embed,
-        num_sampled=num_sampled,
-        num_classes=vocabulary_size
-      )
-    )
-    optimizer = tf.train.GradientDescentOptimizer(1.0).minimize(loss)
-    norm = tf.sqrt(tf.reduce_sum(tf.square(embeddings), 1, keepdims=True))
-    normalized_embeddings = embeddings /norm
-    valid_embeddings = tf.nn.embedding_lookup(normalized_embeddings, valid_dataset)
-    similarity = tf.matmul(valid_embeddings, normalized_embeddings, transpose_b=True)
-    init = tf.global_variables_initializer()
-
-    num_steps = 100001
-    with tf.Session() as sess:
-      init.run()
-      print("Iinialized")
-      average_loss = 0
-      for step in range(num_steps):
-        batch_inputs, batch_labels = generate_batch(
-          data, batch_size, num_skips, skip_window
+      loss = tf.reduce_mean(
+        tf.nn.nce_loss(
+          weights=nce_weights,
+          biases=nce_biases,
+          labels=train_labels, 
+          inputs=embed_input,
+          num_sampled=num_sampled,
+          num_classes=vocabulary_size
         )
-        feed_dict = {train_inputs: batch_inputs, train_labels: batch_labels}
-        _, loss_val = sess.run([optimizer, loss], feed_dict=feed_dict)
-        average_loss+=loss_val
-        if step % 2000 == 0:
-          if step > 0:
-            average_loss /= 2000
-          print ('average loss at step ', step, ': ', average_loss)
-          average_loss = 0
-        if step % 10000 == 0:
-          sim = similarity.eval()
-          for i in range(valid_size):
-            valid_word = reverse_dictionary[valid_examples[i]]
-            top_k = 8
-            nearest = (-sim[i, :]).argsort()[1:top_k+1]
-            log_str = "Nearest to %s: " % valid_word
-            for k in range(top_k):
-              close_word = reverse_dictionary[nearest[k]]
-              log_str = "%s %s, " % (log_str, close_word)
-              print log_str
-        finial_embeddings = normalized_embeddings.eval()
-
+      )
+      optimizer = tf.train.GradientDescentOptimizer(1.0).minimize(loss)
+      norm = tf.sqrt(tf.reduce_sum(tf.square(embeddings), 1, keepdims=True))
+      normalized_embeddings = embeddings / norm
+      valid_embeddings = tf.nn.embedding_lookup(normalized_embeddings, valid_dataset)
+      similarity = tf.matmul(valid_embeddings, normalized_embeddings, transpose_b=True)
+      
+      init = tf.global_variables_initializer()
+      num_steps = 100001
+      with tf.Session() as sess:
+        init.run()
+        print("Iinialized")
+        average_loss = 0
+        for step in range(num_steps):
+          batch_inputs, batch_labels = generate_batch(
+            data, batch_size, num_skips, skip_window
+          )
+          feed_dict = {train_inputs: batch_inputs, train_labels: batch_labels}
+          _, loss_val = sess.run([optimizer, loss], feed_dict=feed_dict)
+          average_loss+=loss_val
+          if step % 2000 == 0:
+            if step > 0:
+              average_loss /= 2000
+            print ('average loss at step ', step, ': ', average_loss)
+            average_loss = 0
+          if step % 10000 == 0:
+            sim = similarity.eval()
+            for i in range(valid_size):
+              valid_word = reverse_dictionary[valid_examples[i]]
+              top_k = 8
+              nearest = (-sim[i, :]).argsort()[1:top_k+1]
+              log_str = "Nearest to %s: " % valid_word
+              for k in range(top_k):
+                close_word = reverse_dictionary[nearest[k]]
+                log_str = "%s %s, " % (log_str, close_word)
+                print log_str
+          finial_embeddings = normalized_embeddings.eval()
+          plot_only = 100
+          low_dim_embs = pca_func(finial_embeddings[:plot_only, :], 2)
+          labels = [reverse_dictionary[i] for i in range(plot_only)]
+          plot_with_labels(low_dim_embs, labels)
+      
 if __name__ == "__main__":
   main()
