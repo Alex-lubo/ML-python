@@ -1,6 +1,7 @@
 # coding: utf-8
 
 import tensorflow as tf
+import numpy as np
 import os as os
 
 W = tf.Variable(tf.zeros([5, 1]), name="weight")
@@ -35,11 +36,13 @@ def loss(X, Y):
   return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=Y, logits=Y_))  
 
 def train(total_loss):
-  learning_rate = 0.008
+  learning_rate = 0.02
   return tf.train.GradientDescentOptimizer(learning_rate).minimize(total_loss)
 
 def evaluate(sess, X, Y):
   predict = tf.cast(inference(X) > 0.5, tf.float32)
+  result_array = np.asarray(predict.eval())
+  np.savetxt("./titantic-pred.csv", np.c_[x, result_array], delimiter=",", header="PassengerId, Survived")
   print 'mst: ', sess.run(tf.reduce_mean(tf.cast(tf.equal(predict, Y), tf.float32)))
 
 
